@@ -3,7 +3,7 @@
 
 # ### Header Code
 
-# In[2]:
+# In[1]:
 
 
 from IPython.core.display import display, HTML
@@ -20,14 +20,14 @@ import math
 
 # ## Setting Up the Bond Data
 
-# In[3]:
+# In[2]:
 
 
 curr_date = '1993-12-31'
 curr_date = datetime.strptime(curr_date, '%Y-%m-%d')
 
 
-# In[4]:
+# In[3]:
 
 
 data = pd.read_csv('Rates_Table.txt', sep=" ", header=None)
@@ -36,7 +36,7 @@ df.columns = df.iloc[0]
 df = df.reindex(df.index.drop(0))
 
 
-# In[5]:
+# In[4]:
 
 
 def calc_months(start_date, end_date):
@@ -44,13 +44,13 @@ def calc_months(start_date, end_date):
     return months
 
 
-# In[6]:
+# In[5]:
 
 
 df['maturity'] = pd.to_datetime(df['maturity'], format='%Y%m%d')
 
 
-# In[7]:
+# In[6]:
 
 
 termlst = []
@@ -61,7 +61,7 @@ df['monthly_term'] = termlst
 df['num_payments'] = df['monthly_term'] / 6
 
 
-# In[8]:
+# In[7]:
 
 
 df
@@ -71,7 +71,7 @@ df
 
 # ### Matrix Inversion Code
 
-# In[9]:
+# In[8]:
 
 
 cf_matrix = np.zeros((10, 10))
@@ -86,14 +86,14 @@ for i in list(range(0, 10)):
         if i == j:
             cf_matrix[i][j] += 100
 #print(cf_matrix)
-bid_discount_factors = np.flip(np.linalg.inv(cf_matrix).dot(np.array(df.bid_price)))
-ask_discount_factors = np.flip(np.linalg.inv(cf_matrix).dot(np.array(df.ask_price)))
-pd.DataFrame([bid_discount_factors, ask_discount_factors], columns=['6 months', '12 months', '18  months', '24 months',
-                                                                   '30 months', '36 months', '42 months', '48  months', 
-                                                                   '54 months', '60 months'], index=['Bid DF', 'Ask DF'])
+#bid_discount_factors = np.flip(np.linalg.inv(cf_matrix).dot(np.array(df.bid_price)))
+#ask_discount_factors = np.flip(np.linalg.inv(cf_matrix).dot(np.array(df.ask_price)))
+#pd.DataFrame([bid_discount_factors, ask_discount_factors], columns=['6 months', '12 months', '18  months', '24 months',
+#                                                                   '30 months', '36 months', '42 months', '48  months', 
+#                                                                   '54 months', '60 months'], index=['Bid DF', 'Ask DF'])
 
 
-# In[10]:
+# In[9]:
 
 
 df_cfmatrix = pd.DataFrame(cf_matrix)
@@ -102,7 +102,7 @@ df_cfmatrix
 
 # ### DF Calculations: custom function
 
-# In[96]:
+# In[10]:
 
 
 def calc_discount_factors(c, p, numPay):
@@ -126,32 +126,9 @@ pd.DataFrame([bidDiscountFactors, askDiscountFactors], columns=['6 months', '12 
                                                                    '54 months', '60 months'], index=['Bid DF', 'Ask DF'])
 
 
-# #### Answers:
-
-# In[97]:
-
-
-#Question 1
-#(b): Ask DF for 5 year year bond
-print('(a): DF for (0,5): ', askDiscountFactors[-1])
-#(a): 2 year implied bid risk free rate
-c = (df['bid_price'].iloc[3] - 100*bidDiscountFactors[3])/(50*np.sum(bidDiscountFactors[0:4]))
-print('(b): 2 year implied risk free rate: ', c*100)
-#(c): bid price of a 3 year US Governemnt bond paying coupon of 5% semi
-cf = []
-period = np.arange(.5, 3.5, 0.5)
-for i in range(0, len(period)):
-    if i == len(period) -1:
-        cf.append(105/(1+bidDiscountFactors[i])**period[i])
-    cf.append(5/(1+bidDiscountFactors[i])**period[i])
-print(sum(cf))
-#p = df['coupon'].iloc[5]/2*np.sum(bidDiscountFactors[0:6]) + (100+df['coupon'].iloc[5]/2)*bidDiscountFactors[6]
-print('(c): 3Y, 5% semiannual rate bid price: ', p)
-
-
 # #### Bootstrapping: Graph of correct Discount factors
 
-# In[13]:
+# In[11]:
 
 
 trace0 = go.Scatter(
@@ -179,19 +156,20 @@ py.iplot(fig, filename='bid-ask-DF_Curve')
 
 # ## Nelson Siegel Method
 
-# In[20]:
+# In[12]:
 
 
 from scipy.optimize import minimize
 
 
-# In[111]:
+# In[13]:
 
 
 def NSmin(parameters):
-    price = list(df['bid_price'])
+    price = list(df['ask_price'])#change this to 'bid_price' to obtain the bid price Discount factors
     T = np.arange(0.5, 5.5, 0.5)#builds the time factor array [0.5, 1.0, 1.5....] by half years
     coupons = list(df['coupon'])#list of coupons from data
+    numPayments = list(df['num_payments'])
     discounts = np.array([])#empty array of discounts that is constantly added to
     NSerrors = np.array([])#empty array of errors
     
@@ -200,32 +178,43 @@ def NSmin(parameters):
         r = parameters[0] + (parameters[1] + parameters[2]) * ((1-np.exp(-T[i]/parameters[3]))/(T[i]/parameters[3])) - parameters[2] * np.exp(-T[i]/parameters[3])
         #discount factor formula that takes in Rate function and Time values
         discount_factor = np.exp(-r*T[i])
+        #print(discount_factor)
         discounts = np.append(discounts, discount_factor)
-        print(discounts)
+        #print(discounts)
         #handles the first zero coupon bond case
         if numPayments[i] == 1:
             pmodel = 100*(discount_factor)
+            #print(pmodel)
             NSerrors = np.append(NSerrors, (pmodel - price[i])**2)
         #handles the rest of the coupon bond cases
         else:
-            pmodel = 100*(coupons[i]/2*(np.sum(discounts)) + discounts[-1])
-            print(pmodel)
+            pmodel = (coupons[i]/2*(np.sum(discounts)) + 100*discounts[-1])
+            #print(pmodel)
             NSerrors = np.append(NSerrors, (pmodel - price[i])**2)
         #NS = np.append(NS, (pmodel - price[i])**2)
     #print(NS)
-    #print(discounts)
-    return np.sum(NSerrors)
+    pd.DataFrame(discounts).to_clipboard()#outputs the discount factors to the clipboard
+    return np.sum(NSerrors)#returns the SSE
 
 
-# In[112]:
+# In[17]:
 
 
-parameters = np.array([0.1, 0.1, 0.1, 1.0])
+parameters = np.array([0.1, 0.1, 0.1, 1.0])#initial parameter values
+#parameters = res.x#updated parameter values after the optimization; used to output the discout factors
 NSmin(parameters=parameters)
 
 
-# In[106]:
+# In[15]:
 
 
 res = minimize(fun=NSmin, x0=parameters)
+
+
+# In[16]:
+
+
+print('Parameters: ', res.x)#take the optimizaed parameters and plug them back into the original function
+
+
 
